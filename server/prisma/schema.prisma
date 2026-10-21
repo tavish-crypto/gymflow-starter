@@ -1,0 +1,301 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  FITNESS_MANAGER
+  TRAINER
+  MEMBER
+}
+
+enum MemberStatus {
+  ACTIVE
+  AT_RISK
+  INACTIVE
+}
+
+enum GoalType {
+  FAT_LOSS
+  MUSCLE_GAIN
+  STRENGTH
+  GENERAL_FITNESS
+  MAINTENANCE
+}
+
+enum MembershipStatus {
+  ACTIVE
+  EXPIRING
+  EXPIRED
+  PAUSED
+}
+
+enum WorkoutPlanStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum WorkoutSessionStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+enum CalendarEventType {
+  WORKOUT
+  MEAL
+  TRAINER_SESSION
+  CLASS
+  PROGRESS_REVIEW
+  WEIGHT_CHECK
+  REMINDER
+}
+
+enum CalendarEventStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model Gym {
+  id          String       @id @default(cuid())
+  name        String
+  users       User[]
+  memberships Membership[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model User {
+  id             String          @id @default(cuid())
+  gymId          String
+  name           String
+  email          String          @unique
+  role           UserRole
+  gym            Gym             @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  memberProfile  MemberProfile?
+  trainerProfile TrainerProfile?
+  createdPlans   WorkoutPlan[]   @relation("PlanCreator")
+  calendarEvents CalendarEvent[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([gymId, role])
+}
+
+model TrainerProfile {
+  id             String          @id @default(cuid())
+  userId         String          @unique
+  specialization String?
+  bio            String?
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  members        MemberProfile[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model MemberProfile {
+  id                 String           @id @default(cuid())
+  userId             String           @unique
+  trainerId          String?
+  goal               GoalType
+  currentWeightKg    Float?
+  targetWeightKg     Float?
+  heightCm           Float?
+  status             MemberStatus     @default(ACTIVE)
+  joinedAt           DateTime         @default(now())
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainer            TrainerProfile?  @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  membership         Membership?
+  attendances        Attendance[]
+  workoutPlans       WorkoutPlan[]
+  workoutSessions    WorkoutSession[]
+  nutritionGoal      NutritionGoal?
+  mealLogs           MealLog[]
+  progressEntries    ProgressEntry[]
+  calendarEvents     CalendarEvent[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([trainerId, status])
+}
+
+model Membership {
+  id        String           @id @default(cuid())
+  gymId     String
+  memberId  String           @unique
+  planName  String
+  status    MembershipStatus @default(ACTIVE)
+  startDate DateTime
+  endDate   DateTime
+  gym       Gym              @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  member    MemberProfile    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([gymId, status, endDate])
+}
+
+model Attendance {
+  id        String        @id @default(cuid())
+  memberId  String
+  checkIn   DateTime
+  checkOut  DateTime?
+  member    MemberProfile @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@index([memberId, checkIn])
+}
+
+model WorkoutPlan {
+  id          String            @id @default(cuid())
+  memberId    String
+  createdById String
+  name        String
+  goal        GoalType
+  status      WorkoutPlanStatus @default(DRAFT)
+  member      MemberProfile     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdBy   User              @relation("PlanCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  days        WorkoutDay[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([memberId, status])
+}
+
+model WorkoutDay {
+  id        String            @id @default(cuid())
+  planId    String
+  title     String
+  dayOfWeek Int
+  sortOrder Int               @default(0)
+  plan      WorkoutPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  exercises WorkoutExercise[]
+  sessions  WorkoutSession[]
+
+  @@index([planId, dayOfWeek])
+}
+
+model Exercise {
+  id           String            @id @default(cuid())
+  name         String            @unique
+  muscleGroup  String
+  equipment    String?
+  planItems    WorkoutExercise[]
+  exerciseLogs ExerciseLog[]
+  createdAt    DateTime          @default(now())
+}
+
+model WorkoutExercise {
+  id             String     @id @default(cuid())
+  workoutDayId   String
+  exerciseId     String
+  sets           Int
+  reps           Int
+  targetWeightKg Float?
+  notes          String?
+  sortOrder      Int        @default(0)
+  workoutDay     WorkoutDay @relation(fields: [workoutDayId], references: [id], onDelete: Cascade)
+  exercise       Exercise   @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+
+  @@unique([workoutDayId, exerciseId])
+}
+
+model WorkoutSession {
+  id           String               @id @default(cuid())
+  memberId     String
+  workoutDayId String?
+  scheduledFor DateTime
+  startedAt    DateTime?
+  endedAt      DateTime?
+  status       WorkoutSessionStatus @default(PLANNED)
+  member       MemberProfile        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  workoutDay   WorkoutDay?          @relation(fields: [workoutDayId], references: [id], onDelete: SetNull)
+  exerciseLogs ExerciseLog[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([memberId, scheduledFor])
+}
+
+model ExerciseLog {
+  id         String         @id @default(cuid())
+  sessionId  String
+  exerciseId String
+  setNumber  Int
+  weightKg   Float?
+  reps       Int?
+  completed  Boolean        @default(false)
+  session    WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  exercise   Exercise       @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+  createdAt  DateTime       @default(now())
+
+  @@unique([sessionId, exerciseId, setNumber])
+}
+
+model NutritionGoal {
+  id        String        @id @default(cuid())
+  memberId  String        @unique
+  calories  Int
+  proteinG  Int
+  carbsG    Int
+  fatG      Int
+  waterMl   Int           @default(3000)
+  member    MemberProfile @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model MealLog {
+  id        String        @id @default(cuid())
+  memberId  String
+  name      String
+  calories  Int
+  proteinG  Int
+  carbsG    Int
+  fatG      Int
+  eatenAt   DateTime
+  member    MemberProfile @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@index([memberId, eatenAt])
+}
+
+model ProgressEntry {
+  id          String        @id @default(cuid())
+  memberId    String
+  weightKg    Float
+  bodyFatPct  Float?
+  note        String?
+  recordedAt  DateTime      @default(now())
+  member      MemberProfile @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, recordedAt])
+}
+
+model CalendarEvent {
+  id          String              @id @default(cuid())
+  userId      String?
+  memberId    String?
+  type        CalendarEventType
+  title       String
+  description String?
+  startAt     DateTime
+  endAt       DateTime?
+  status      CalendarEventStatus @default(SCHEDULED)
+  relatedId   String?
+  user        User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member      MemberProfile?      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([userId, startAt])
+  @@index([memberId, startAt])
+}
